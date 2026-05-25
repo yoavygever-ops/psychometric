@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="סימולטור">
+  <meta name="theme-color" content="#2563eb">
+  <title>סימולטור — פסיכומטרי</title>
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <a href="../" class="back-link">‹ חזרה</a>
+      <div class="page-title">סימולטור</div>
+    </header>
+
+    <div id="settings-screen"></div>
+    <div id="session-screen" hidden></div>
+    <div id="summary-screen" hidden></div>
+  </div>
+
+  <script src="../shared/engine.js"></script>
+  <script src="../shared/ui.js"></script>
+  <script src="questions.js"></script>
+  <script>
+    const settingsEl = document.getElementById('settings-screen');
+    const sessionEl = document.getElementById('session-screen');
+    const summaryEl = document.getElementById('summary-screen');
+
+    const topics = [
+      { id: 'pow_base',     label: 'חזקות — בסיסים' },
+      { id: 'pow_factor',   label: 'חזקות — גורם משותף' },
+      { id: 'alg_xy',       label: 'כפל מקוצר' },
+      { id: 'diff_sq',      label: 'הפרש ריבועים' },
+      { id: 'eq_combo',     label: 'מערכת משוואות' },
+      { id: 'abs',          label: 'ערך מוחלט' },
+      { id: 'inv_op',       label: 'פעולות מומצאות' },
+      { id: 'ratio',        label: 'יחס משולב' },
+      { id: 'pct_seq',      label: 'אחוזים עוקבים' },
+      { id: 'avg',          label: 'ממוצע' },
+      { id: 'arith_seq',    label: 'סדרה חשבונית' },
+      { id: 'geom_seq',     label: 'סדרה הנדסית' },
+      { id: 'remainder',    label: 'שאריות בחילוק' },
+      { id: 'num_props',    label: 'תכונות מספרים' },
+      { id: 'digit_cycle',  label: 'ספרת האחדות' },
+      { id: 'ineq',         label: 'אי-שוויונות' },
+      { id: 'mixture',      label: 'תערובות' },
+      { id: 'weighted_avg', label: 'ממוצע משוקלל' },
+      { id: 'motion',       label: 'בעיות תנועה' },
+      { id: 'work',         label: 'הספק ועבודה' },
+      { id: 'combi',        label: 'קומבינטוריקה' },
+      { id: 'prob',         label: 'הסתברות' },
+      { id: 'venn',         label: 'דיאגרמת ון' },
+    ];
+
+    const advancedHTML = `
+      <div class="adv-group">
+        <div class="adv-group-title">מספרים</div>
+        <div class="toggle-row">
+          <label for="adv-large">מספרים גדולים יותר</label>
+          <input type="checkbox" id="adv-large" class="toggle">
+        </div>
+        <div class="toggle-row">
+          <label for="adv-neg-ans">לאפשר תשובות שליליות</label>
+          <input type="checkbox" id="adv-neg-ans" class="toggle">
+        </div>
+      </div>
+
+      <div class="adv-group">
+        <div class="adv-group-title">סדרות</div>
+        <div class="input-row">
+          <label>מקסימום מקום של איבר</label>
+          <input type="number" id="adv-seq-max" value="25" min="10" max="100">
+        </div>
+      </div>
+
+      <div class="adv-group">
+        <div class="adv-group-title">פעולות מומצאות</div>
+        <div class="input-row">
+          <label>מספר מקסימלי בפעולה</label>
+          <input type="number" id="adv-op-max" value="9" min="5" max="20">
+        </div>
+      </div>
+    `;
+
+    function showSettings() {
+      sessionEl.hidden = true;
+      summaryEl.hidden = true;
+      settingsEl.hidden = false;
+      UI.buildSettings({
+        container: settingsEl,
+        topics,
+        advancedHTML,
+        collectAdvanced: (c) => ({
+          largeNumbers: c.querySelector('#adv-large').checked,
+          allowNegAnswers: c.querySelector('#adv-neg-ans').checked,
+          seqMaxPos: parseInt(c.querySelector('#adv-seq-max').value, 10) || 25,
+          opMax: parseInt(c.querySelector('#adv-op-max').value, 10) || 9,
+        }),
+        onStart: startSession,
+      });
+    }
+
+    let session, refs, advanceTimer = null;
+
+    function startSession(config) {
+      settingsEl.hidden = true;
+      summaryEl.hidden = true;
+      sessionEl.hidden = false;
+      refs = UI.buildSession(sessionEl);
+      session = new Engine.Session(config, Simulator.generate);
+      session.onTick = (left, total) => UI.updateTimer(refs, left, total);
+      session.onTimeout = () => handleAnswer(null, null);
+      refs.stopBtn.addEventListener('click', () => endSession());
+      nextQuestion();
+    }
+
+    function nextQuestion() {
+      if (advanceTimer) { clearTimeout(advanceTimer); advanceTimer = null; }
+      if (session.isFinished()) return endSession();
+      const q = session.nextQuestion();
+      UI.updateStats(refs, session);
+      UI.renderQuestion(refs, q, session.config.answerMode, handleAnswer);
+    }
+
+    function handleAnswer(value, target) {
+      const result = session.submitAnswer(value);
+      if (!result) return;
+      UI.showFeedback(refs, session.current, session.config.answerMode, result, target);
+      UI.updateStats(refs, session);
+      advanceTimer = setTimeout(() => nextQuestion(), 1500);
+    }
+
+    function endSession() {
+      if (advanceTimer) { clearTimeout(advanceTimer); advanceTimer = null; }
+      session.stop();
+      sessionEl.hidden = true;
+      summaryEl.hidden = false;
+      UI.renderSummary(summaryEl, session, showSettings, () => location.href = '../');
+    }
+
+    showSettings();
+  </script>
+</body>
+</html>

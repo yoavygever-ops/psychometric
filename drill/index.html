@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="תרגול">
+  <meta name="theme-color" content="#2563eb">
+  <title>תרגול — פסיכומטרי</title>
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <a href="../" class="back-link">‹ חזרה</a>
+      <div class="page-title">תרגול</div>
+    </header>
+
+    <div id="settings-screen"></div>
+    <div id="session-screen" hidden></div>
+    <div id="summary-screen" hidden></div>
+  </div>
+
+  <script src="../shared/engine.js"></script>
+  <script src="../shared/ui.js"></script>
+  <script src="drill.js"></script>
+  <script>
+    const settingsEl = document.getElementById('settings-screen');
+    const sessionEl = document.getElementById('session-screen');
+    const summaryEl = document.getElementById('summary-screen');
+
+    const topics = [
+      { id: 'add',   label: 'חיבור' },
+      { id: 'sub',   label: 'חיסור' },
+      { id: 'mul',   label: 'כפל' },
+      { id: 'div',   label: 'חילוק' },
+      { id: 'pow',   label: 'חזקות' },
+      { id: 'root',  label: 'שורשים' },
+      { id: 'mixed', label: 'ביטויים מעורבים' },
+    ];
+
+    const advancedHTML = `
+      <div class="adv-group">
+        <div class="adv-group-title">טווח מספרים (לחיבור/חיסור/כפל)</div>
+        <div class="toggle-row">
+          <label for="adv-custom-range">להגדיר טווח ידנית</label>
+          <input type="checkbox" id="adv-custom-range" class="toggle">
+        </div>
+        <div class="input-row">
+          <label>מינימום</label>
+          <input type="number" id="adv-min" value="1" min="0" max="100000" disabled>
+        </div>
+        <div class="input-row">
+          <label>מקסימום</label>
+          <input type="number" id="adv-max" value="100" min="2" max="100000" disabled>
+        </div>
+      </div>
+
+      <div class="adv-group">
+        <div class="adv-group-title">חזקות ושורשים</div>
+        <div class="input-row">
+          <label>חזקה מקסימלית</label>
+          <input type="number" id="adv-max-exp" value="4" min="2" max="8">
+        </div>
+        <div class="toggle-row">
+          <label for="adv-cube">לכלול שורש מעוקב</label>
+          <input type="checkbox" id="adv-cube" class="toggle">
+        </div>
+      </div>
+
+      <div class="adv-group">
+        <div class="adv-group-title">כללי</div>
+        <div class="toggle-row">
+          <label for="adv-negatives">לאפשר מספרים שליליים</label>
+          <input type="checkbox" id="adv-negatives" class="toggle">
+        </div>
+        <div class="toggle-row">
+          <label for="adv-fractions">לאפשר שברים (חיבור/חיסור)</label>
+          <input type="checkbox" id="adv-fractions" class="toggle">
+        </div>
+        <div class="toggle-row">
+          <label for="adv-mixed-3">ביטויים מעורבים — 3 פעולות</label>
+          <input type="checkbox" id="adv-mixed-3" class="toggle">
+        </div>
+      </div>
+    `;
+
+    function showSettings() {
+      sessionEl.hidden = true;
+      summaryEl.hidden = true;
+      settingsEl.hidden = false;
+      UI.buildSettings({
+        container: settingsEl,
+        topics,
+        advancedHTML,
+        wireAdvanced: (c) => {
+          const cr = c.querySelector('#adv-custom-range');
+          const min = c.querySelector('#adv-min');
+          const max = c.querySelector('#adv-max');
+          cr.addEventListener('change', () => {
+            min.disabled = !cr.checked;
+            max.disabled = !cr.checked;
+          });
+        },
+        collectAdvanced: (c) => ({
+          customRange: c.querySelector('#adv-custom-range').checked,
+          minNum: parseInt(c.querySelector('#adv-min').value, 10) || 1,
+          maxNum: parseInt(c.querySelector('#adv-max').value, 10) || 100,
+          maxExp: parseInt(c.querySelector('#adv-max-exp').value, 10) || 4,
+          includeCubeRoot: c.querySelector('#adv-cube').checked,
+          allowNegatives: c.querySelector('#adv-negatives').checked,
+          allowFractions: c.querySelector('#adv-fractions').checked,
+          mixedThreeOps: c.querySelector('#adv-mixed-3').checked,
+        }),
+        onStart: startSession,
+      });
+    }
+
+    let session, refs, advanceTimer = null;
+
+    function startSession(config) {
+      settingsEl.hidden = true;
+      summaryEl.hidden = true;
+      sessionEl.hidden = false;
+      refs = UI.buildSession(sessionEl);
+      session = new Engine.Session(config, Drill.generate);
+      session.onTick = (left, total) => UI.updateTimer(refs, left, total);
+      session.onTimeout = () => handleAnswer(null, null);
+      refs.stopBtn.addEventListener('click', () => endSession());
+      nextQuestion();
+    }
+
+    function nextQuestion() {
+      if (advanceTimer) { clearTimeout(advanceTimer); advanceTimer = null; }
+      if (session.isFinished()) return endSession();
+      const q = session.nextQuestion();
+      UI.updateStats(refs, session);
+      UI.renderQuestion(refs, q, session.config.answerMode, handleAnswer);
+    }
+
+    function handleAnswer(value, target) {
+      const result = session.submitAnswer(value);
+      if (!result) return;
+      UI.showFeedback(refs, session.current, session.config.answerMode, result, target);
+      UI.updateStats(refs, session);
+      advanceTimer = setTimeout(() => nextQuestion(), 1500);
+    }
+
+    function endSession() {
+      if (advanceTimer) { clearTimeout(advanceTimer); advanceTimer = null; }
+      session.stop();
+      sessionEl.hidden = true;
+      summaryEl.hidden = false;
+      UI.renderSummary(summaryEl, session, showSettings, () => location.href = '../');
+    }
+
+    showSettings();
+  </script>
+</body>
+</html>
